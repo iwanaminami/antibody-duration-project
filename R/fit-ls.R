@@ -35,6 +35,24 @@
 # The number dropped is recorded in `$diagnostics$message` so that a run with
 # censoring cannot be mistaken for a run without it.
 #
+# h2 IS UNIDENTIFIED AT SHORT FOLLOW-UP, AND THAT IS WHERE THE SKEW COMES
+# FROM. On six months of data, bootstrap resamples return slow half-lives
+# spanning ten orders of magnitude -- a few hundred days to 1e10 -- at
+# residual sums of squares that differ in the fifth decimal. The objective is
+# flat along that direction, so a search stops wherever it happens to enter
+# the ridge. A resample that lands at the far end describes a tail that never
+# decays, and its T* runs away with it: that is the mechanism behind the
+# heavy right tail in the duration draws (skewness of log T* around 9 on a
+# three-month cell), and behind the non-crossing replicates that make the
+# upper end of the interval Inf.
+#
+# Two consequences. Compare fits by their objective and their T*, never by
+# their parameters -- comparing parameters asserts an identifiability the
+# data do not have. And do not start the resamples from the point estimate to
+# save time: anchoring them on the ridge stops the search reaching the far
+# end, which silently narrows the interval and turns Inf into a large finite
+# number. That was measured, and reverted, on this branch.
+#
 # THE ESTIMAND IS THE POPULATION. A pooled least-squares fit has no random
 # effects, so one curve is fitted to everybody and the duration it implies is
 # a statement about the population trajectory, not about any participant.
