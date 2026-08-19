@@ -112,3 +112,101 @@ test_that("a non-crossing point estimate gets no finite delta interval", {
   expect_true(is.infinite(d$tstar_med))
   expect_true(is.infinite(d$tstar_hi))
 })
+
+# --- the other candidate families ------------------------------------------
+#
+# `fit_ls()` accepts any of CANDIDATE_MODELS, so all four need cover. They
+# cannot be exercised through `mock_sim_dataset()`, whose truth is always
+# biphasic, and TRUTH_MODELS does not admit powerlaw or plateau as a truth --
+# by design, since a fitted family and a generating mechanism are different
+# things. So the data are built here from the frozen curves. `fit_ls()` reads
+# `$obs` and `$cell` and nothing else, which is what makes the stand-in safe.
+
+FAMILY_TRUTH <- list(
+  exponential = list(c0 = 0.90, k = 0.005),
+  biphasic    = list(c0 = 0.92, h1 = 35, h2 = 581, ts = 75),
+  powerlaw    = list(c0 = 0.90, alpha = 0.04, beta = 0.80),
+  plateau     = list(c0 = 0.90, A_inf = 0.12, k = 0.02)
+)
+
+family_data <- function(model, par = FAMILY_TRUTH[[model]], sigma = 0.02,
+                        n = 40L, days = 730, c_thr = 0.202, seed = 11L) {
+  times <- seq(0, days, by = 30)
+  cell <- design_cell(followup_days = days, visits_per_year = 12,
+                      n_participants = n, sigma_log = sigma, c_thr = c_thr)
+  obs <- .with_seed(seed, do.call(rbind, lapply(seq_len(n), function(i) {
+    mu <- curve_eval(model, times, par)
+    data.frame(participant_id = as.integer(i),
+               time_days = as.numeric(times),
+               y_obs = as.numeric(mu * exp(rnorm(length(times), 0, sigma))),
+               censor = "none", stringsAsFactors = FALSE)
+  })))
+  list(cell = cell, obs = tibble::as_tibble(obs))
+}
+
+test_that("every candidate family recovers its own parameters", {
+  # 5% is loose against the ~1% actually achieved on this data, but the point
+  # is that the optimiser lands in the right place, not that it lands to four
+  # decimals on one seed.
+  for (model in CANDIDATE_MODELS) {
+    fit <- fit_ls(family_data(model), model, cfg_test)
+    expect_equal(fit$optim$convergence, 0L,
+                 info = paste(model, "did not converge"))
+    expect_equal(unlist(fit$par), unlist(FAMILY_TRUTH[[model]]),
+                 tolerance = 0.05, info = model)
+  }
+})
+
+test_that("fitted parameters satisfy each family's own constraints", {
+  # The working parameterisation exists to make these hold by construction;
+  # if one ever fails, the transform and its inverse have drifted apart.
+  for (model in CANDIDATE_MODELS) {
+    par <- fit_ls(family_data(model), model, cfg_test)$par
+    expect_true(all(unlist(par) > 0), info = model)
+    if (model == "biphasic") expect_lt(par$h1, par$h2)
+    if (model == "plateau") expect_lt(par$A_inf, par$c0)
+  }
+})
+
+test_that("every candidate family emits a valid fit_result", {
+  for (model in CANDIDATE_MODELS) {
+    out <- fit_ls_bootstrap(family_data(model), model, cfg_test, n_boot = 20L)
+    expect_no_error(validate_fit_result(out))
+    expect_equal(out$model, model)
+    expect_setequal(unique(out$params$param), curve_params(model))
+    expect_true(is.finite(out$ic$aic), info = model)
+  }
+})
+
+test_that("misspecification is costly, and costly in a direction", {
+  # Biphasic truth. A single exponential fitted to a curve that flattens must
+  # extrapolate the early rate of decline, so it crosses the threshold too
+  # soon and reports T* too long -- and pays for it in AIC. This is the number
+  # workstream (c) compares its model selection against.
+  d <- mock_sim_dataset(mock_design_cell(n_participants = 100,
+                                         followup_days = 365))
+  right <- fit_ls_bootstrap(d, "biphasic", cfg_test, n_boot = 20L)
+  wrong <- fit_ls_bootstrap(d, "exponential", cfg_test, n_boot = 20L)
+
+  truth <- tstar("biphasic", list(c0 = 0.92, h1 = 35, h2 = 581, ts = 75),
+                 0.202)
+  t_right <- summarise_tstar(right, "population")$tstar_med
+  t_wrong <- summarise_tstar(wrong, "population")$tstar_med
+
+  expect_lt(abs(t_right - truth), abs(t_wrong - truth))
+  expect_gt(t_wrong, truth)
+  expect_lt(right$ic$aic, wrong$ic$aic)
+})
+
+test_that("a plateau settling above the threshold never crosses", {
+  # The family that generates genuine non-crossing draws. A_inf above c_thr
+  # means the trajectory stops before it reaches the threshold, and that must
+  # surface as Inf rather than as a very large finite duration.
+  par <- list(c0 = 0.90, A_inf = 0.30, k = 0.02)
+  d <- family_data("plateau", par = par, c_thr = 0.202)
+  out <- fit_ls_bootstrap(d, "plateau", cfg_test, n_boot = 20L)
+
+  expect_true(all(is.infinite(out$tstar_draws$tstar_days)))
+  expect_true(all(!out$tstar_draws$crossed))
+  expect_equal(summarise_tstar(out, "population")$prob_no_cross, 1)
+})
