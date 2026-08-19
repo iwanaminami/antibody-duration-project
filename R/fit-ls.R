@@ -35,18 +35,6 @@
 # The number dropped is recorded in `$diagnostics$message` so that a run with
 # censoring cannot be mistaken for a run without it.
 #
-# h2 IS UNIDENTIFIED AT SHORT FOLLOW-UP, AND THAT IS WHERE THE SKEW COMES
-# FROM. On six months of data, bootstrap resamples return slow half-lives
-# spanning ten orders of magnitude -- a few hundred days to 1e10 -- at
-# indistinguishable residual sums of squares. The objective is flat along
-# that direction, so the search stops wherever it happens to enter the ridge.
-# A resample that lands at the far end describes a tail that never decays,
-# and its T* runs away with it. That is the mechanism behind the heavy right
-# tail in the duration draws (skewness of log T* around 9 on a three-month
-# cell), and it is why a symmetric interval is the wrong shape here however
-# accurately its width is computed. Compare fits by their objective and their
-# T*, never by their parameters.
-#
 # THE ESTIMAND IS THE POPULATION. A pooled least-squares fit has no random
 # effects, so one curve is fitted to everybody and the duration it implies is
 # a statement about the population trajectory, not about any participant.
@@ -105,40 +93,19 @@
 # and the starting values are only as good as the handout's calibration, so
 # the two-stage search costs little and fails far less often than either
 # method alone.
-#
-# `warm = TRUE` says the starting values are already an optimum for data very
-# like this -- which is exactly a bootstrap replicate, whose resample differs
-# from the original by a handful of participants. There the Nelder-Mead stage
-# is redundant, and skipping it is most of the cost of a sweep. It is an
-# optimisation, not a different estimator: if BFGS alone does not converge,
-# the full search runs anyway, so a resample that really is far from the
-# point estimate is not quietly given a worse fit than it would have had.
-.ls_fit_core <- function(t, logy, model, start_par, warm = FALSE) {
+.ls_fit_core <- function(t, logy, model, start_par) {
   theta0 <- .ls_to_working(start_par, model)
   obj <- function(theta) .ls_ssr(theta, model, t, logy)
-  spent <- 0L
-
-  if (warm) {
-    bf <- stats::optim(theta0, obj, method = "BFGS",
-                       control = list(maxit = 500L, reltol = 1e-12))
-    if (bf$convergence == 0L) return(.ls_core_result(bf, unname(bf$counts[1])))
-    spent <- unname(bf$counts[1])
-  }
-
   nm <- stats::optim(theta0, obj, method = "Nelder-Mead",
                      control = list(maxit = 1000L, reltol = 1e-10))
   bf <- stats::optim(nm$par, obj, method = "BFGS",
                      control = list(maxit = 500L, reltol = 1e-12))
-  .ls_core_result(bf, spent + unname(nm$counts[1]) + unname(bf$counts[1]))
-}
-
-.ls_core_result <- function(bf, fn_calls) {
   grad_calls <- unname(bf$counts[2])
   list(
     theta = bf$par,
     ssr = bf$value,
     convergence = bf$convergence,
-    counts = c(function_calls = fn_calls,
+    counts = c(function_calls = unname(nm$counts[1]) + unname(bf$counts[1]),
                gradient_calls = if (is.na(grad_calls)) 0L else grad_calls),
     message = if (is.null(bf$message)) NA_character_ else bf$message
   )
@@ -308,7 +275,7 @@ fit_ls_bootstrap <- function(data, model = "biphasic", cfg, n_boot = 500L,
     rows <- unlist(by_id[as.character(take)], use.names = FALSE)
     d <- obs[rows, , drop = FALSE]
     core <- tryCatch(
-      .ls_fit_core(d$time_days, log(d$y_obs), model, point$par, warm = TRUE),
+      .ls_fit_core(d$time_days, log(d$y_obs), model, point$par),
       error = function(e) NULL
     )
     if (is.null(core) || core$convergence != 0) return(NULL)
