@@ -1,0 +1,73 @@
+# Default configuration for the Duration of Antibody Protection project.
+#
+# Calibration values are transcribed from the participant handout
+# (notes/handout.tex, Tables `tab:starting-values` and `tab:heterogeneity`).
+# The handout is the methodological source of truth: change it there first,
+# then mirror the change here.
+#
+# All antibody levels are relative to the mean convalescent neutralisation
+# level, which is 1 by construction. All times are days.
+
+schema_version: "1.0.0"
+
+calibration:
+  setting: >-
+    BNT162b2 dose 3 against Delta; neutralising titres expressed relative to
+    the mean convalescent level.
+  source: "Hogan et al. (2023) for the trajectory; Khoury et al. (2021) for the thresholds."
+
+  # Biphasic reference model, handout Equation (2).
+  biphasic:
+    c0: 0.92          # early level; 95% CrI 0.71-1.19
+    h1_days: 35       # fast half-life; tentative range 25-60
+    h2_days: 581      # slow half-life; the key long-term assumption, 250-900
+    ts_days: 75       # switching time
+
+  # Observation model, handout Equation (5).
+  observation:
+    sigma_log: 0.20   # SD of the multiplicative log-normal assay error
+    lloq: null        # lower limit of quantification; null = no censoring
+    uloq: null        # upper limit of quantification
+
+  # Relative titres associated with 50% protection (Khoury et al. 2021).
+  thresholds:
+    symptomatic: 0.202
+    severe: 0.030
+  default_threshold: symptomatic
+
+  # Correlated log-normal random effects on c0 and h2, handout Equation (6).
+  heterogeneity:
+    omega_0: 0.30     # log-SD of the peak level
+    omega_h: 0.25     # log-SD of the slow half-life
+    rho_0h: 0.30      # correlation; include 0 as a comparison
+
+# The sweep. Months here are labels only; read_config() converts them to the
+# `followup_days` the rest of the code uses.
+design:
+  truth_models: [biphasic]
+  followup_months: [3, 6, 9, 12, 18, 24]
+  visits_per_year: [12, 4]      # monthly, quarterly
+  n_participants: [100]
+  sigma_log: [0.20]
+  heterogeneity: [false]
+  n_replicates: 50
+
+fitting:
+  models: [biphasic, exponential]
+  interval_level: 0.90
+
+# Adequacy rules. A design is called provisionally adequate only when all
+# three hold; over-coverage on its own is not a failure, but a very wide or
+# mostly non-crossing interval must not pass merely by containing the truth.
+scoring:
+  interval_level: 0.90
+  min_coverage: 0.85
+  max_rel_width: 0.50
+  strict_max_rel_width: 0.30
+  max_prob_no_cross: 0.10
+
+run:
+  seed: 20260901
+  cache_dir: cache
+  results_dir: results
+  figures_dir: results/figures

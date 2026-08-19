@@ -1,0 +1,43 @@
+Package: antibodyduration
+Title: Duration of Antibody Protection Simulation Study
+Version: 0.1.0
+Authors@R:
+    person("William", "Hart", email = "william.hart@maths.ox.ac.uk",
+           role = c("aut", "cre"))
+Description: Shared schemas, candidate trajectory models and analysis
+    workstreams for the Duration of Antibody Protection project at the
+    Nagoya-Oxford Workshop 2026. The package supports a simulation study
+    that asks how well the duration of antibody-associated protection can
+    be estimated from a given amount of trial follow-up. See
+    notes/handout.tex for the methodological source of truth.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends:
+    R (>= 4.3)
+Imports:
+    dplyr,
+    ggplot2,
+    purrr,
+    stats,
+    tibble,
+    tidyr,
+    utils,
+    yaml
+Suggests:
+    boot,
+    brms,
+    cmdstanr,
+    deSolve,
+    minpack.lm,
+    nlme,
+    nlmixr2,
+    numDeriv,
+    patchwork,
+    pkgload,
+    rjags,
+    saemix,
+    testthat (>= 3.0.0)
+Additional_repositories: https://stan-dev.r-universe.dev
+Config/testthat/edition: 3
+Roxygen: false
+RoxygenNote: NA

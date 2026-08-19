@@ -125,9 +125,6 @@ ipython_config.py
 .pdm-python
 .pdm-build/
 
-# Pixi: retain pixi.lock; ignore the generated environment.
-/.pixi/
-
 # PEP 582
 __pypackages__/
 
@@ -204,3 +201,25 @@ __marimo__/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+
+# R session state
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rcheck/
+*.tar.gz
+
+# renv: retain renv.lock and renv/activate.R; ignore the private library
+renv/library/
+renv/local/
+renv/cellar/
+renv/staging/
+renv/python/
+renv/sandbox/
+
+# Generated analysis artefacts
+/cache/
+/results/
+!/results/.gitkeep
