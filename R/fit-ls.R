@@ -415,3 +415,84 @@ tstar_delta_interval <- function(fit, cfg, level = 0.90) {
   out$tstar_hi <- point * exp(z * se)
   out
 }
+
+# --- interval constructions, for comparison --------------------------------
+
+#' The same draws, summarised several ways.
+#'
+#' A diagnostic, not a replacement. `summarise_tstar()` remains the single
+#' place the project turns draws into the interval it scores; this exists so
+#' that the choice it encodes can be examined rather than assumed, and so that
+#' an adequacy or stopping rule written on interval width can be tried against
+#' more than one definition of width.
+#'
+#' The constructions differ in what they assume about the shape of the
+#' sampling distribution, which matters here because that distribution is
+#' strongly right-skewed:
+#'
+#' * `percentile` takes the quantiles of the draws directly. Assumes nothing
+#'   about shape, which is why it is the project default.
+#' * `basic` reflects the draws about the point estimate. Assumes the bias is
+#'   the same at both ends, which a skewed distribution violates.
+#' * `bc` is bias-corrected: it shifts the quantiles by how far the point
+#'   estimate sits from the median of the draws. Cheaper than BCa, which would
+#'   need a jackknife, and it addresses the part of the skew that matters most
+#'   here.
+#' * `delta` is [tstar_delta_interval()], carried along for the comparison.
+#'
+#' **A non-crossing draw defeats two of these.** `basic` reflects `Inf` to
+#' `-Inf` and `bc` cannot place a quantile past it, so both return `NA` rather
+#' than a number when any draw is `Inf`. That is not a defect to be patched:
+#' it says those constructions have no answer when the fit says the threshold
+#' may never be reached, and a rule built on them would be silently undefined
+#' in exactly the cells the project cares about.
+#'
+#' @param fit the list from [fit_ls()].
+#' @param boot the [fit_result()] from [fit_ls_bootstrap()].
+#' @param level nominal interval level.
+#' @return one row per construction, with the columns of [summarise_tstar()]
+#'   plus `basis`, so the rows can be stacked and plotted on one axis.
+tstar_interval_variants <- function(fit, boot, cfg, level = 0.90) {
+  d <- boot$tstar_draws[boot$tstar_draws$estimand == "population", ]
+  draws <- d$tstar_days
+  point <- tstar(fit$model, fit$par, fit$c_thr)
+  a <- (1 - level) / 2
+  any_inf <- any(!is.finite(draws))
+
+  row <- function(basis, lo, hi) {
+    tibble::tibble(
+      estimand = "population", tstar_med = as.numeric(point),
+      tstar_lo = as.numeric(lo), tstar_hi = as.numeric(hi),
+      interval_level = level, prob_no_cross = mean(!d$crossed),
+      n_draws = nrow(d), basis = basis
+    )
+  }
+
+  q <- stats::quantile(draws, c(a, 1 - a), names = FALSE)
+  out <- row("percentile", q[1], q[2])
+
+  if (any_inf) {
+    out <- rbind(out, row("basic", NA_real_, NA_real_),
+                 row("bc", NA_real_, NA_real_))
+  } else {
+    hi_lo <- stats::quantile(draws, c(1 - a, a), names = FALSE)
+    out <- rbind(out, row("basic", 2 * point - hi_lo[1], 2 * point - hi_lo[2]))
+
+    # Bias correction: z0 measures how far the point estimate sits from the
+    # median of the draws, on the normal scale. A symmetric bootstrap gives
+    # z0 = 0 and the interval reduces to the percentile one.
+    p_below <- mean(draws < point)
+    if (p_below <= 0 || p_below >= 1) {
+      out <- rbind(out, row("bc", NA_real_, NA_real_))
+    } else {
+      z0 <- stats::qnorm(p_below)
+      z <- stats::qnorm(c(a, 1 - a))
+      adj <- stats::pnorm(2 * z0 + z)
+      qb <- stats::quantile(draws, adj, names = FALSE)
+      out <- rbind(out, row("bc", qb[1], qb[2]))
+    }
+  }
+
+  dl <- tstar_delta_interval(fit, cfg, level)
+  rbind(out, row("delta", dl$tstar_lo, dl$tstar_hi))
+}

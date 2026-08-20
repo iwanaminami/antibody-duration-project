@@ -210,3 +210,38 @@ test_that("a plateau settling above the threshold never crosses", {
   expect_true(all(!out$tstar_draws$crossed))
   expect_equal(summarise_tstar(out, "population")$prob_no_cross, 1)
 })
+
+test_that("the interval variants agree with the project's own summary", {
+  # `summarise_tstar()` stays the single place draws become the scored
+  # interval. If the percentile row here ever drifts from it, the diagnostic
+  # has stopped describing the thing it is meant to put in context.
+  d <- mock_sim_dataset(mock_design_cell(n_participants = 40))
+  fit <- fit_ls(d, "biphasic", cfg_test)
+  boot <- fit_ls_bootstrap(d, "biphasic", cfg_test, n_boot = 60L)
+
+  v <- tstar_interval_variants(fit, boot, cfg_test, level = 0.90)
+  s <- summarise_tstar(boot, "population", level = 0.90)
+  pc <- v[v$basis == "percentile", ]
+
+  expect_setequal(v$basis, c("percentile", "basic", "bc", "delta"))
+  expect_equal(pc$tstar_lo, s$tstar_lo)
+  expect_equal(pc$tstar_hi, s$tstar_hi)
+  expect_equal(v$prob_no_cross, rep(s$prob_no_cross, 4))
+  for (i in which(!is.na(v$tstar_lo))) expect_lte(v$tstar_lo[i], v$tstar_hi[i])
+})
+
+test_that("constructions that cannot express a non-crossing draw say so", {
+  # Reflecting Inf about the point estimate gives -Inf, and a bias-corrected
+  # quantile cannot be placed past it. Returning NA records that those
+  # definitions have no answer here, rather than inventing one.
+  cell <- design_cell(followup_days = 180, visits_per_year = 12,
+                      n_participants = 20, sigma_log = 0.20, c_thr = 1e-9)
+  d <- mock_sim_dataset(cell)
+  fit <- fit_ls(d, "biphasic", cfg_test)
+  boot <- fit_ls_bootstrap(d, "biphasic", cfg_test, n_boot = 20L)
+
+  v <- tstar_interval_variants(fit, boot, cfg_test)
+  expect_true(all(is.na(v$tstar_lo[v$basis %in% c("basic", "bc")])))
+  expect_true(all(is.na(v$tstar_hi[v$basis %in% c("basic", "bc")])))
+  expect_equal(v$prob_no_cross[[1]], 1)
+})
